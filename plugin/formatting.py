@@ -1,6 +1,6 @@
-from .core.registry import session_for_view
+from .core.logging import printf
 from .core.protocol import Request
-from .core.registry import client_for_view, LspTextCommand
+from .core.registry import client_for_view, LspTextCommand, session_for_view
 from .core.types import ViewLike
 from .core.url import filename_to_uri
 from .core.views import region_to_range
@@ -44,10 +44,13 @@ class FormatOnSave(sublime_plugin.ViewEventListener):
                 with cv:
                     client.send_request(
                         request, lambda response: self.handle_save_response(response, cv, returnData))
-                    cv.wait(30)
-                self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
+                    if cv.wait(5):
+                        self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
+                    else:
+                        printf('Timeout while formatting before saving')
 
-    def handle_save_response(self, response, cv, returnData):
+    @staticmethod
+    def handle_save_response(response, cv, returnData):
         with cv:
             returnData['response'] = response
             cv.notify()
