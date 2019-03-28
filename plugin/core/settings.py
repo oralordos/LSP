@@ -65,6 +65,8 @@ def update_settings(settings: Settings, settings_obj: sublime.Settings):
     settings.completion_hint_type = read_str_setting(settings_obj, "completion_hint_type", "auto")
     settings.resolve_completion_for_snippets = read_bool_setting(settings_obj, "resolve_completion_for_snippets", False)
     settings.show_references_in_quick_panel = read_bool_setting(settings_obj, "show_references_in_quick_panel", False)
+    settings.format_on_save = read_bool_setting(settings_obj, "format_on_save", False)
+    settings.format_on_save_timeout = read_int_setting(settings_obj, "format_on_save_timeout", 5)
     settings.log_debug = read_bool_setting(settings_obj, "log_debug", False)
     settings.log_server = read_bool_setting(settings_obj, "log_server", True)
     settings.log_stderr = read_bool_setting(settings_obj, "log_stderr", False)

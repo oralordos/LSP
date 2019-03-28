@@ -1,6 +1,7 @@
 from .core.logging import debug
 from .core.protocol import Request
 from .core.registry import client_for_view, LspTextCommand, session_for_view
+from .core.settings import settings
 from .core.types import ViewLike
 from .core.url import filename_to_uri
 from .core.views import region_to_range
@@ -29,29 +30,30 @@ class FormatOnSave(sublime_plugin.ViewEventListener):
         return False
 
     def on_pre_save(self):
-        if self.has_client_with_capability('documentFormattingProvider'):
-            client = client_for_view(self.view)
-            if client:
-                cv = threading.Condition()
-                params = {
-                    "textDocument": {
-                        "uri": filename_to_uri(self.view.file_name())
-                    },
-                    "options": options_for_view(self.view)
-                }
-                returnData = {'error': None}
-                request = Request.formatting(params)
-                with cv:
-                    client.send_request(
-                        request, lambda response: self.handle_save_response(response, cv, returnData),
-                        lambda response: self.hander_error_save_response(response, cv, returnData))
-                    if cv.wait(5):
-                        if returnData['error'] is not None:
-                            debug('Error while formatting:', returnData['error'].get('message'))
+        if settings.format_on_save:
+            if self.has_client_with_capability('documentFormattingProvider'):
+                client = client_for_view(self.view)
+                if client:
+                    cv = threading.Condition()
+                    params = {
+                        "textDocument": {
+                            "uri": filename_to_uri(self.view.file_name())
+                        },
+                        "options": options_for_view(self.view)
+                    }
+                    returnData = {'error': None}
+                    request = Request.formatting(params)
+                    with cv:
+                        client.send_request(
+                            request, lambda response: self.handle_save_response(response, cv, returnData),
+                            lambda response: self.hander_error_save_response(response, cv, returnData))
+                        if cv.wait(settings.format_on_save_timeout):
+                            if returnData['error'] is not None:
+                                debug('Error while formatting:', returnData['error'].get('message'))
+                            else:
+                                self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
                         else:
-                            self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
-                    else:
-                        debug('Timeout while formatting before saving')
+                            debug('Timeout while formatting before saving')
 
     @staticmethod
     def handle_save_response(response, cv, returnData):

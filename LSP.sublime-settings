@@ -358,6 +358,12 @@
   // Show symbol references in Sublime's quick panel instead of the bottom panel.
   "show_references_in_quick_panel": false,
 
+  // Format document on save
+  "format_on_save": false,
+
+  // Timeout for format_on_save in seconds
+  "format_on_save_timeout": 5,
+
   // Show verbose debug messages in the sublime console.
   "log_debug": false,
 

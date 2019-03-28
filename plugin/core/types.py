@@ -35,6 +35,8 @@ class Settings(object):
         self.completion_hint_type = "auto"
         self.resolve_completion_for_snippets = False
         self.show_references_in_quick_panel = False
+        self.format_on_save = False
+        self.format_on_save_timeout = 5
         self.log_debug = True
         self.log_server = True
         self.log_stderr = False
