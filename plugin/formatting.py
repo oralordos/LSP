@@ -1,4 +1,4 @@
-from .core.logging import printf
+from .core.logging import debug
 from .core.protocol import Request
 from .core.registry import client_for_view, LspTextCommand, session_for_view
 from .core.types import ViewLike
@@ -39,20 +39,30 @@ class FormatOnSave(sublime_plugin.ViewEventListener):
                     },
                     "options": options_for_view(self.view)
                 }
-                returnData = {}
+                returnData = {'error': None}
                 request = Request.formatting(params)
                 with cv:
                     client.send_request(
-                        request, lambda response: self.handle_save_response(response, cv, returnData))
+                        request, lambda response: self.handle_save_response(response, cv, returnData),
+                        lambda response: self.hander_error_save_response(response, cv, returnData))
                     if cv.wait(5):
-                        self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
+                        if returnData['error'] is not None:
+                            debug('Error while formatting:', returnData['error'].get('message'))
+                        else:
+                            self.view.run_command('lsp_apply_document_edit', {'changes': returnData['response']})
                     else:
-                        printf('Timeout while formatting before saving')
+                        debug('Timeout while formatting before saving')
 
     @staticmethod
     def handle_save_response(response, cv, returnData):
         with cv:
             returnData['response'] = response
+            cv.notify()
+
+    @staticmethod
+    def hander_error_save_response(response, cv, returnData):
+        with cv:
+            returnData['error'] = response
             cv.notify()
 
 
