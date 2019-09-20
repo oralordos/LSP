@@ -11,12 +11,12 @@ except ImportError:
     pass
 
 from .core.configurations import is_supported_syntax
-from .core.registry import session_for_view, client_for_view
+from .core.registry import session_for_view, client_from_session
 from .core.documents import get_document_position
 from .core.events import global_events
 from .core.protocol import Request
 from .core.popups import popup_css, popup_class
-from .core.settings import client_configs
+from .core.settings import client_configs, settings
 from .core.signature_help import create_signature_help, SignatureHelp
 assert SignatureHelp
 
@@ -24,6 +24,7 @@ assert SignatureHelp
 class ColorSchemeScopeRenderer(object):
     def __init__(self, view) -> None:
         self._scope_styles = {}  # type: dict
+        self._view = view
         for scope in ["entity.name.function", "variable.parameter", "punctuation"]:
             self._scope_styles[scope] = mdpopups.scope2style(view, scope)
 
@@ -35,6 +36,9 @@ class ColorSchemeScopeRenderer(object):
 
     def parameter(self, content: str, emphasize: bool = False) -> str:
         return self._wrap_with_scope_style(content, "variable.parameter", emphasize)
+
+    def markdown(self, content: str) -> str:
+        return mdpopups.md2html(self._view, content)
 
     def _wrap_with_scope_style(self, content: str, scope: str, emphasize: bool = False, escape: bool = True) -> str:
         color = self._scope_styles[scope]["color"]
@@ -54,12 +58,14 @@ class SignatureHelpListener(sublime_plugin.ViewEventListener):
         self._renderer = ColorSchemeScopeRenderer(self.view)
 
     @classmethod
-    def is_applicable(cls, settings):
-        syntax = settings.get('syntax')
+    def is_applicable(cls, view_settings):
+        if 'signatureHelp' in settings.disabled_capabilities:
+            return False
+        syntax = view_settings.get('syntax')
         return syntax and is_supported_syntax(syntax, client_configs.all)
 
     def initialize(self):
-        session = session_for_view(self.view)
+        session = session_for_view(self.view, 'signatureHelpProvider')
         if session:
             signatureHelpProvider = session.get_capability(
                 'signatureHelpProvider')
@@ -87,7 +93,7 @@ class SignatureHelpListener(sublime_plugin.ViewEventListener):
                     self.view.hide_popup()
 
     def request_signature_help(self, point) -> None:
-        client = client_for_view(self.view)
+        client = client_from_session(session_for_view(self.view, 'signatureHelpProvider', point))
         if client:
             global_events.publish("view.on_purge_changes", self.view)
             document_position = get_document_position(self.view, point)

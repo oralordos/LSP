@@ -19,7 +19,6 @@ from .core.panels import ensure_panel
 from .core.protocol import Diagnostic, DiagnosticSeverity
 from .core.settings import settings, PLUGIN_NAME, client_configs
 from .core.views import range_to_region
-from .core.workspace import get_project_path
 from .core.registry import windows
 
 
@@ -128,7 +127,7 @@ def format_diagnostic(diagnostic: Diagnostic) -> str:
 phantom_sets_by_buffer = {}  # type: Dict[int, sublime.PhantomSet]
 
 
-def update_diagnostics_phantoms(view: sublime.View, diagnostics: 'List[Diagnostic]'):
+def update_diagnostics_phantoms(view: sublime.View, diagnostics: 'List[Diagnostic]') -> None:
     global phantom_sets_by_buffer
 
     buffer_id = view.buffer_id()
@@ -171,21 +170,22 @@ def update_diagnostics_regions(view: sublime.View, diagnostics: 'List[Diagnostic
         view.erase_regions(region_name)
 
 
-def update_diagnostics_in_view(view: sublime.View, diagnostics: 'List[Diagnostic]'):
+def update_diagnostics_in_view(view: sublime.View):
     if view and view.is_valid():
-        update_diagnostics_phantoms(view, diagnostics)
+        file_diagnostics = get_view_diagnostics(view)
         for severity in range(
                 DiagnosticSeverity.Error,
                 DiagnosticSeverity.Error + settings.show_diagnostics_severity_level):
-            update_diagnostics_regions(view, diagnostics, severity)
+            update_diagnostics_regions(view, file_diagnostics, severity)
+
+        update_diagnostics_phantoms(view, file_diagnostics)
 
 
-def get_view_diagnostics(view):
+def get_view_diagnostics(view) -> 'List[Diagnostic]':
     if view.window():
         if view.file_name():
             return windows.lookup(view.window())._diagnostics.get_by_path(view.file_name())
-        else:
-            return []
+    return []
 
 
 def get_line_diagnostics(view, point):
@@ -242,7 +242,7 @@ def handle_diagnostics(update: DiagnosticsUpdate):
     window = update.window
     view = window.find_open_file(update.file_path)
     if view:
-        update_diagnostics_in_view(view, update.diagnostics)
+        update_diagnostics_in_view(view)
         if settings.show_diagnostics_count_in_view_status:
             update_diagnostics_in_status_bar(view)
     else:
@@ -308,7 +308,7 @@ def update_diagnostics_panel(window: sublime.Window):
         debug('ignoring update to closed window')
         return
 
-    base_dir = get_project_path(window)
+    base_dir = windows.lookup(window).get_project_path()
 
     diagnostics_by_file = get_window_diagnostics(window)
     if diagnostics_by_file is not None:

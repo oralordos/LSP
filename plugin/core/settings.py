@@ -5,8 +5,8 @@ from .logging import debug
 PLUGIN_NAME = 'LSP'
 
 try:
-    from typing import List, Optional, Dict, Any
-    assert List and Optional and Dict and Any
+    from typing import List, Optional, Dict, Any, Callable
+    assert List and Optional and Dict and Any and Callable
 except ImportError:
     pass
 
@@ -30,6 +30,14 @@ def read_int_setting(settings_obj: sublime.Settings, key: str, default: int) -> 
 def read_dict_setting(settings_obj: sublime.Settings, key: str, default: dict) -> dict:
     val = settings_obj.get(key)
     if isinstance(val, dict):
+        return val
+    else:
+        return default
+
+
+def read_array_setting(settings_obj: sublime.Settings, key: str, default: list) -> list:
+    val = settings_obj.get(key)
+    if isinstance(val, list):
         return val
     else:
         return default
@@ -66,6 +74,7 @@ def update_settings(settings: Settings, settings_obj: sublime.Settings):
     settings.format_on_save = read_bool_setting(settings_obj, "format_on_save", False)
     settings.format_on_save_timeout = read_int_setting(settings_obj, "format_on_save_timeout", 5)
     settings.quick_panel_monospace_font = read_bool_setting(settings_obj, "quick_panel_monospace_font", False)
+    settings.disabled_capabilities = read_array_setting(settings_obj, "disabled_capabilities", [])
     settings.log_debug = read_bool_setting(settings_obj, "log_debug", False)
     settings.log_server = read_bool_setting(settings_obj, "log_server", True)
     settings.log_stderr = read_bool_setting(settings_obj, "log_stderr", False)
@@ -79,6 +88,7 @@ class ClientConfigs(object):
         self._global_settings = dict()  # type: Dict[str, dict]
         self._external_configs = dict()  # type: Dict[str, ClientConfig]
         self.all = []  # type: List[ClientConfig]
+        self._listener = None  # type: Optional[Callable]
 
     def update(self, settings_obj: sublime.Settings):
         self._default_settings = read_dict_setting(settings_obj, "default_clients", {})
@@ -104,6 +114,8 @@ class ClientConfigs(object):
             self.all.append(read_client_config(config_name, merged_settings))
 
         debug('global configs', list('{}={}'.format(c.name, c.enabled) for c in self.all))
+        if self._listener:
+            self._listener()
 
     def _set_enabled(self, config_name: str, is_enabled: bool):
         if _settings_obj:
@@ -117,6 +129,9 @@ class ClientConfigs(object):
 
     def disable(self, config_name: str):
         self._set_enabled(config_name, False)
+
+    def set_listener(self, recipient: 'Callable') -> None:
+        self._listener = recipient
 
 
 _settings_obj = None  # type: Optional[sublime.Settings]

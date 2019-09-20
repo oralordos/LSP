@@ -37,6 +37,7 @@ class Settings(object):
         self.format_on_save = False
         self.format_on_save_timeout = 5
         self.quick_panel_monospace_font = False
+        self.disabled_capabilities = []  # type: List[str]
         self.log_debug = True
         self.log_server = True
         self.log_stderr = False

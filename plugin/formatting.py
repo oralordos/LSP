@@ -82,7 +82,7 @@ class LspFormatDocumentCommand(LspTextCommand):
         return self.has_client_with_capability('documentFormattingProvider')
 
     def run(self, edit):
-        client = client_for_view(self.view)
+        client = self.client_with_capability('documentFormattingProvider')
         if client:
             params = {
                 "textDocument": {
@@ -107,8 +107,8 @@ class LspFormatDocumentRangeCommand(LspTextCommand):
                     return True
         return False
 
-    def run(self, _):
-        client = client_for_view(self.view)
+    def run(self, _) -> None:
+        client = self.client_with_capability('documentRangeFormattingProvider')
         if client:
             region = self.view.sel()[0]
             params = {

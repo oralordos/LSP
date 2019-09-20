@@ -15,10 +15,9 @@ from .core.registry import session_for_view, LspTextCommand
 from .core.protocol import Request, DiagnosticSeverity
 from .core.documents import get_document_position
 from .core.popups import popup_css, popup_class
-from .core.settings import client_configs
+from .core.settings import client_configs, settings
 
 SUBLIME_WORD_MASK = 515
-NO_HOVER_SCOPES = 'comment, string'
 
 
 class HoverHandler(sublime_plugin.ViewEventListener):
@@ -26,8 +25,10 @@ class HoverHandler(sublime_plugin.ViewEventListener):
         self.view = view
 
     @classmethod
-    def is_applicable(cls, settings):
-        syntax = settings.get('syntax')
+    def is_applicable(cls, view_settings):
+        if 'hover' in settings.disabled_capabilities:
+            return False
+        syntax = view_settings.get('syntax')
         return syntax and is_supported_syntax(syntax, client_configs.all)
 
     def on_hover(self, point, hover_zone):
@@ -47,13 +48,31 @@ class_for_severity = {
 }
 
 
+class GotoKind:
+
+    __slots__ = ("lsp_name", "label", "subl_cmd_name")
+
+    def __init__(self, lsp_name: str, label: str, subl_cmd_name: str) -> None:
+        self.lsp_name = lsp_name
+        self.label = label
+        self.subl_cmd_name = subl_cmd_name
+
+
+goto_kinds = [
+    GotoKind("definition", "Definition", "definition"),
+    GotoKind("typeDefinition", "Type Definition", "type_definition"),
+    GotoKind("declaration", "Declaration", "declaration"),
+    GotoKind("implementation", "Implementation", "implementation")
+]
+
+
 class LspHoverCommand(LspTextCommand):
     def __init__(self, view):
         super().__init__(view)
 
     def is_likely_at_symbol(self, point):
         word_at_sel = self.view.classify(point)
-        return word_at_sel & SUBLIME_WORD_MASK and not self.view.match_selector(point, NO_HOVER_SCOPES)
+        return word_at_sel & SUBLIME_WORD_MASK
 
     def run(self, edit, point=None):
         if point is None:
@@ -65,15 +84,16 @@ class LspHoverCommand(LspTextCommand):
             self.show_hover(point, self.diagnostics_content(point_diagnostics))
 
     def request_symbol_hover(self, point) -> None:
-        session = session_for_view(self.view, point)
+        # todo: session_for_view looks up windowmanager twice (config and for sessions)
+        # can we memoize some part (eg. where no point is provided?)
+        session = session_for_view(self.view, 'hoverProvider', point)
         if session:
-            if session.has_capability('hoverProvider'):
-                document_position = get_document_position(self.view, point)
-                if document_position:
-                    if session.client:
-                        session.client.send_request(
-                            Request.hover(document_position),
-                            lambda response: self.handle_response(response, point))
+            document_position = get_document_position(self.view, point)
+            if document_position:
+                if session.client:
+                    session.client.send_request(
+                        Request.hover(document_position),
+                        lambda response: self.handle_response(response, point))
 
     def handle_response(self, response: 'Optional[Any]', point) -> None:
         all_content = ""
@@ -83,30 +103,32 @@ class LspHoverCommand(LspTextCommand):
             all_content += self.diagnostics_content(point_diagnostics)
 
         all_content += self.hover_content(point, response)
-        all_content += self.symbol_actions_content()
+        if all_content:
+            all_content += self.symbol_actions_content()
 
         _test_contents.clear()
         _test_contents.append(all_content)  # for testing only
-        self.show_hover(point, all_content)
+
+        if all_content:
+            self.show_hover(point, all_content)
 
     def symbol_actions_content(self):
         actions = []
-        if self.has_client_with_capability('definitionProvider'):
-            actions.append("<a href='{}'>{}</a>".format('definition', 'Definition'))
-
+        for goto_kind in goto_kinds:
+            if self.has_client_with_capability(goto_kind.lsp_name + "Provider"):
+                actions.append("<a href='{}'>{}</a>".format(goto_kind.lsp_name, goto_kind.label))
         if self.has_client_with_capability('referencesProvider'):
             actions.append("<a href='{}'>{}</a>".format('references', 'References'))
-
         if self.has_client_with_capability('renameProvider'):
             actions.append("<a href='{}'>{}</a>".format('rename', 'Rename'))
-
         return "<p>" + " | ".join(actions) + "</p>"
 
     def format_diagnostic(self, diagnostic):
+        diagnostic_message = escape(diagnostic.message, False).replace('\n', '<br>')
         if diagnostic.source:
-            return "<pre>[{}] {}</pre>".format(diagnostic.source, escape(diagnostic.message, False))
+            return "<pre>[{}] {}</pre>".format(diagnostic.source, diagnostic_message)
         else:
-            return "<pre>{}</pre>".format(escape(diagnostic.message, False))
+            return "<pre>{}</pre>".format(diagnostic_message)
 
     def diagnostics_content(self, diagnostics):
         by_severity = {}  # type: Dict[int, List[str]]
@@ -123,10 +145,8 @@ class LspHoverCommand(LspTextCommand):
         return "".join(formatted)
 
     def hover_content(self, point, response: 'Optional[Any]') -> str:
-        contents = ["No description available."]
+        contents = []  # type: List[Any]
         if isinstance(response, dict):
-            # Flow returns None sometimes
-            # See: https://github.com/flowtype/flow-language-server/issues/51
             response_content = response.get('contents')
             if response_content:
                 if isinstance(response_content, list):
@@ -139,16 +159,19 @@ class LspHoverCommand(LspTextCommand):
             value = ""
             language = None
             if isinstance(item, str):
-                value = escape(item)
+                value = item
             else:
-                value = escape(item.get("value"))
+                value = item.get("value")
                 language = item.get("language")
             if language:
                 formatted.append("```{}\n{}\n```\n".format(language, value))
             else:
                 formatted.append(value)
 
-        return mdpopups.md2html(self.view, "\n".join(formatted))
+        if formatted:
+            return mdpopups.md2html(self.view, "\n".join(formatted))
+
+        return ""
 
     def show_hover(self, point, contents):
         mdpopups.show_popup(
@@ -163,9 +186,11 @@ class LspHoverCommand(LspTextCommand):
             on_navigate=lambda href: self.on_hover_navigate(href, point))
 
     def on_hover_navigate(self, href, point):
-        if href == 'definition':
-            self.run_command_from_point(point, "lsp_symbol_definition")
-        elif href == 'references':
+        for goto_kind in goto_kinds:
+            if href == goto_kind.lsp_name:
+                self.run_command_from_point(point, "lsp_symbol_" + goto_kind.subl_cmd_name)
+                return
+        if href == 'references':
             self.run_command_from_point(point, "lsp_symbol_references")
         elif href == 'rename':
             self.run_command_from_point(point, "lsp_symbol_rename")

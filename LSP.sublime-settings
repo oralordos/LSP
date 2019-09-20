@@ -89,6 +89,10 @@
   // Use monospace font for the quick panel.
   "quick_panel_monospace_font": false,
 
+  // Disable language client capabilities. Supported values:
+  // "hover", "completion", "colorProvider", "documentHighlight", "signatureHelp"
+  "disabled_capabilities": [],
+
   // Show verbose debug messages in the sublime console.
   "log_debug": false,
 
@@ -243,7 +247,10 @@
       ]
     },
     "dart": {
-      "command": ["dart_language_server"],
+      "command": [
+        // Specify a dart command like the below in your LSP User settings.
+        // "dart", "/usr/local/opt/dart/libexec/bin/snapshots/analysis_server.dart.snapshot", "--lsp"
+      ],
       "languageId": "dart",
       "scopes": ["source.dart"],
       "syntaxes": ["Packages/Dart/Dart.tmLanguage"]
@@ -263,11 +270,18 @@
       "scopes": ["source.haskell"],
       "syntaxes": ["Packages/Haskell/Haskell.sublime-syntax"]
     },
-    "intelephense-ls": {
-      "command": ["intelephense", "--stdio"],
-      "scopes": ["source.php", "embedding.php"],
-      "syntaxes": ["Packages/PHP/PHP.sublime-syntax"],
-      "languageId": "php"
+    "intelephense-ls":
+    {
+        "command": ["intelephense", "--stdio"],
+        "scopes": ["source.php", "embedding.php"],
+        "syntaxes": ["Packages/PHP/PHP.sublime-syntax"],
+        "languageId": "php",
+        // "initializationOptions": {
+        //   "clearCache": false,
+        //   "storagePath": "/tmp/intelephense",
+        //   "globalStoragePath": "/tmp/intelephense",
+        //   "licenceKey": "",
+        // },
     },
     "reason": {
       "command": ["ocaml-language-server", "--stdio"],
@@ -418,7 +432,11 @@
         "Packages/Rails/Ruby on Rails.sublime-syntax",
         "Packages/Rails/HTML (Rails).sublime-syntax"
       ],
-      "tcp_port": 7658
+      "tcp_port": 7658,
+      // Enable RuboCop linting
+      // "initializationOptions": {
+      //   "diagnostics": true
+      // },
     },
     "vscode-css": {
       "command": ["css-languageserver", "--stdio"],

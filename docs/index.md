@@ -28,44 +28,9 @@ Older flow-language-server: [github](https://github.com/flowtype/flow-language-s
 
 ### Vue (Javascript)<a name="vue"></a>
 
-See: [npm package](https://www.npmjs.com/package/vue-language-server)
+See: [LSP-vue](https://packagecontrol.io/packages/LSP-vue)
 
-Client configuration:
-```
-"vue-ls":{
-  "command": [
-    "vls"
-    // note: you may need to use the absolute path to the language server binary
-  ],
-  "enabled": true,
-  "languageId": "vue",
-  "scopes": ["text.html.vue"],
-  "syntaxes": ["Vue Component"],
-  "initializationOptions": {
-    "config": {
-      "vetur": {
-        "useWorkspaceDependencies": false,
-        "validation": { "template": true, "style": true, "script": true },
-        "completion": { "autoImport": false, "useScaffoldSnippets": false, "tagCasing": "kebab" },
-        "format": {
-          "defaultFormatter": {"js": "none", "ts": "none"},
-          "defaultFormatterOptions": {},
-          "scriptInitialIndent": false,
-          "styleInitialIndent": false
-        }
-      },
-      "css": {},
-      "html": {"suggest": {} },
-      "javascript": {"format": {} },
-      "typescript": {"format": {} },
-      "emmet": {},
-      "stylusSupremacy": {}
-    }
-  }
-}
-```
-
-Be sure to install "Vue Syntax Highlight" from Package Control.
+Be sure to install [Vue Syntax Highlight](https://packagecontrol.io/packages/Vue%20Syntax%20Highlight) from Package Control.
 
 ### Python<a name="python"></a>
 
@@ -76,6 +41,20 @@ See: [github:palantir/python-language-server](https://github.com/palantir/python
 Alternatively, Microsoft's python language server (using .NET Core runtime)
 
 [Instructions here](https://github.com/Microsoft/python-language-server/blob/master/Using_in_sublime_text.md)
+
+Use virtualenv adding the following settings :
+
+```json
+"settings": {
+        "LSP": {
+            "pyls": {
+                "env": {
+                    "PYTHONPATH": "/Users/mike/.virtualenvs/my-virtual-env/lib/python3.7/site-packages"
+                }
+            }
+        }
+    }
+```
 
 ### PHP<a name="php"></a>
 
@@ -130,6 +109,30 @@ Then the LSP plugin should launch as configured in `LSP.sublime-settings` using 
 
 See the dedicated <a href="cplusplus"/>C/C++</a> guide for using ccls, cquery or clangd.
 
+
+### C#
+
+Omnisharp [omnisharp-roslyn](https://github.com/OmniSharp/omnisharp-roslyn)
+
+Download or build according to instructions above, then add this client config to your LSP settings under clients:
+
+```jsonc
+"omnisharp": {
+  "command":
+  [
+    "/home/tb/prebuilt/omnisharp/OmniSharp.exe", // or eg. /usr/local/opt/omnisharp/run
+    "-lsp"
+  ],
+  "enabled": true,
+  "languageId": "csharp",
+  "syntaxes": ["Packages/C#/C#.sublime-syntax"],
+  "scopes":
+  [
+    "source.cs"
+  ]
+}
+```
+
 ### D<a name="d"></a>
 
 See instructions for [d-language-server](https://github.com/d-language-server/dls).
@@ -149,6 +152,35 @@ Add to LSP settings' clients:
     "languageId": "d",
     "scopes": ["source.d"],
     "syntaxes": ["Packages/D/D.sublime-syntax"]
+}
+```
+
+### Elm<a name="elm"></a>
+
+See instructions for installing the [elm-language-server](https://github.com/elm-tooling/elm-language-server).
+Install [Elm Syntax Higlighting](https://packagecontrol.io/packages/Elm%20Syntax%20Highlighting) from Package Control for syntax highlighting.
+
+Add to LSP settings' clients:
+
+```json
+"elm": {
+    "command": [
+        "elm-language-server",
+        "--stdio"
+    ],
+    "enabled": true,
+    "languageId": "elm",
+    "scopes":
+    [
+        "source.elm"
+    ],
+    "syntaxes":
+    [
+        "Packages/Elm Syntax Highlighting/src/elm.sublime-syntax"
+    ],
+    "initializationOptions": {
+        "elmAnalyseTrigger": "change"
+    }
 }
 ```
 
@@ -199,11 +231,11 @@ More info: https://github.com/Polymer/polymer-editor-service
 
 ### Dart<a name="dart"></a>
 
-`pub global activate dart_language_server`
+Install the Dart Sublime package and the [Dart SDK](https://dart.dev/get-dart)
 
-Make sure the pub bin directory is part of your path.
+Then locate the "snapshots/bin" directory of the SDK, and specify the path to `analysis_server.dart.snapshot` in the LSP user settings under "clients", "dart", then "command".
 
-See: [natebosch/dart_language_server](https://github.com/natebosch/dart_language_server)
+The older [natebosch/dart_language_server](https://github.com/natebosch/dart_language_server) is now deprecated
 
 ### Kotlin
 
@@ -233,6 +265,26 @@ Requires [building](https://github.com/fwcd/KotlinLanguageServer/blob/master/BUI
 
 Additionally, install the [Kotlin sublime package](https://github.com/vkostyukov/kotlin-sublime-package) for syntax highlighting.
 
+
+### Julia<a name="julia">
+
+
+Install the LanguageServer package from the Julia repl.
+
+Install the [LSP-julia](https://github.com/randy3k/LSP-julia) sublime package from package control.
+
+Or instead of LSP-julia, add the following client configuration:
+
+```json
+"julials":
+{
+  "command": ["bash", "PATH_TO_JULIA_SERVER/LanguageServer/contrib/languageserver.sh"],
+  "languageId": "julia",
+  "scopes": ["source.julia"],
+  "syntaxes": ["Packages/Julia/Julia.sublime-syntax"],
+  "settings": {"runlinter": true}
+}
+```
 
 ### Lua<a name="lua">
 
@@ -393,12 +445,13 @@ or in multi-language form:
 * `tcp_port` - if not specified then stdin/out are used else sets the tcpport to connect to (if no command is specified then it is assumed that some process is listing on this port)
 * `scopes` - add language flavours, eg. `source.js`, `source.jsx`.
 * `syntaxes` - syntaxes that enable LSP features on a document, eg. `Packages/Babel/JavaScript (Babel).tmLanguage`
-* `languageId` - used both by the language servers and to select a syntax highlighter for sublime popups.
+* `languageId` - identifies the language for a document - see https://microsoft.github.io/language-server-protocol/specification#textdocumentitem
 * `languages` - group scope, syntax and languageId together for servers that support more than one language
 * `enabled` - enables a language server (default is disabled)
 * `settings` - per-project settings (equivalent to VS Code's Workspace Settings)
 * `env` - dict of environment variables to be injected into the language server's process (eg. PYTHONPATH)
 * `initializationOptions` - options to send to the server at startup (rarely used)
+
 
 ## Per-project overrides
 

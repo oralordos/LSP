@@ -1,3 +1,5 @@
+from ..highlights import remove_highlights
+from ..color import remove_color_boxes
 
 try:
     from typing import Any, List, Dict, Tuple, Callable, Optional, Set
@@ -10,7 +12,7 @@ import sublime
 from .settings import (
     settings, load_settings, unload_settings
 )
-from .logging import set_debug_logging
+from .logging import set_debug_logging, set_server_logging
 from .events import global_events
 from .registry import windows, load_handlers, unload_sessions
 from .panels import destroy_output_panels
@@ -19,6 +21,7 @@ from .panels import destroy_output_panels
 def startup():
     load_settings()
     set_debug_logging(settings.log_debug)
+    set_server_logging(settings.log_server)
     load_handlers()
     global_events.subscribe("view.on_load_async", on_view_activated)
     global_events.subscribe("view.on_activated_async", on_view_activated)
@@ -31,13 +34,15 @@ def shutdown():
     # Also needs to handle package being disabled or removed
     # https://github.com/tomv564/LSP/issues/375
     unload_settings()
-    unload_sessions()  # unloads view state from document sync and diagnostics
-    unload_panels()  # references and diagnostics panels
 
-
-def unload_panels():
     for window in sublime.windows():
-        destroy_output_panels(window)
+        unload_sessions(window)  # unloads view state from document sync and diagnostics
+        destroy_output_panels(window)  # references and diagnostics panels
+
+        for view in window.views():
+            if view.file_name():
+                remove_highlights(view)
+                remove_color_boxes(view)
 
 
 def start_active_window():

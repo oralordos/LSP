@@ -163,13 +163,13 @@ class MockConfigs(object):
         self.all = [test_config]
 
     def is_supported(self, view):
-        return self.scope_config(view) is not None
+        return any(self.scope_configs(view))
 
-    def scope_config(self, view, point=None):
+    def scope_configs(self, view, point=None):
         if view.file_name() is None:
-            return None
+            return [None]
         else:
-            return test_config
+            return [test_config]
 
     def syntax_configs(self, view):
         if view.settings().get("syntax") == "Plain Text":
@@ -220,11 +220,21 @@ class TestDocumentHandlerFactory(object):
         return MockDocuments()
 
 
-def mock_start_session(window, project_path, config, on_created: 'Callable', on_ended: 'Callable'):
-    return create_session(test_config, project_path, dict(), MockSettings(),
-                          bootstrap_client=MockClient(),
-                          on_created=on_created,
-                          on_ended=on_ended)
+def mock_start_session(window: MockWindow,
+                       project_path: str,
+                       config: ClientConfig,
+                       on_pre_initialize: 'Callable[[Session], None]',
+                       on_post_initialize: 'Callable[[Session], None]',
+                       on_post_exit: 'Callable[[str], None]') -> 'Optional[Session]':
+    return create_session(
+        config=test_config,
+        project_path=project_path,
+        env=dict(),
+        settings=MockSettings(),
+        bootstrap_client=MockClient(),
+        on_pre_initialize=on_pre_initialize,
+        on_post_initialize=on_post_initialize,
+        on_post_exit=on_post_exit)
 
 
 class WindowRegistryTests(unittest.TestCase):

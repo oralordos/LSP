@@ -14,11 +14,10 @@ except ImportError:
 
 class DiagnosticsUpdate(object):
     def __init__(self, window, client_name: str,
-                 file_path: str, diagnostics: 'List[Diagnostic]') -> 'None':
+                 file_path: str) -> 'None':
         self.window = window
         self.client_name = client_name
         self.file_path = file_path
-        self.diagnostics = diagnostics
 
 
 class WindowDiagnostics(object):
@@ -56,10 +55,10 @@ class WindowDiagnostics(object):
         return updated
 
     def clear(self):
-        for file_path in self._diagnostics:
-            for client_name in self._diagnostics[file_path]:
+        for file_path in list(self._diagnostics):
+            for client_name in list(self._diagnostics[file_path]):
                 self.update(file_path, client_name, [])
-                self._on_updated(file_path, client_name, [])
+                self._on_updated(file_path, client_name)
 
     def handle_client_diagnostics(self, client_name: str, update: dict):
         maybe_file_uri = update.get('uri')
@@ -71,7 +70,7 @@ class WindowDiagnostics(object):
 
             if self.update(file_path, client_name, diagnostics):
                 if self._on_updated:
-                    self._on_updated(file_path, client_name, diagnostics)
+                    self._on_updated(file_path, client_name)
         else:
             debug('missing uri in diagnostics update')
 

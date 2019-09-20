@@ -6,13 +6,14 @@ from .protocol import Notification, Response
 from .edit import parse_workspace_edit
 from .sessions import Session
 from .url import filename_to_uri
-from .workspace import get_project_path
+from .workspace import get_project_path, get_active_view_path
 from .rpc import Client
+import threading
 try:
     from typing_extensions import Protocol
-    from typing import Optional, List, Callable, Dict, Any
+    from typing import Optional, List, Callable, Dict, Any, Iterator
     from types import ModuleType
-    assert Optional and List and Callable and Dict and Session and Any and ModuleType
+    assert Optional and List and Callable and Dict and Session and Any and ModuleType and Iterator
     assert LanguageConfig
 except ImportError:
     pass
@@ -26,7 +27,7 @@ class ConfigRegistry(Protocol):
     def is_supported(self, view: ViewLike) -> bool:
         ...
 
-    def scope_config(self, view: ViewLike, point: 'Optional[int]' = None) -> 'Optional[ClientConfig]':
+    def scope_configs(self, view: ViewLike, point: 'Optional[int]' = None) -> 'Iterator[ClientConfig]':
         ...
 
     def syntax_configs(self, view: ViewLike) -> 'List[ClientConfig]':
@@ -161,7 +162,7 @@ class WindowDocumentHandler(object):
         return True
 
     def _notify_open_documents(self, session: Session) -> None:
-        for file_name in self._document_states:
+        for file_name in list(self._document_states):
             view = self._window.find_open_file(file_name)
             if view:
                 syntax = view.settings().get("syntax")
@@ -194,6 +195,7 @@ class WindowDocumentHandler(object):
         for config_name, language in config_languages.items():
             languages[config_name] = language.id
         view.settings().set('lsp_language', languages)
+        view.settings().set('lsp_active', True)
 
     def handle_view_opened(self, view: ViewLike):
         file_name = view.file_name()
@@ -282,6 +284,10 @@ class WindowDocumentHandler(object):
     def notify_did_change(self, view: ViewLike):
         file_name = view.file_name()
         if file_name and view.window() == self._window:
+            # ensure view is opened.
+            if not self.has_document_state(file_name):
+                self.handle_view_opened(view)
+
             if view.buffer_id() in self._pending_buffer_changes:
                 del self._pending_buffer_changes[view.buffer_id()]
 
@@ -318,12 +324,14 @@ class WindowManager(object):
         self._handlers = handler_dispatcher
         self._restarting = False
         self._project_path = get_project_path(self._window)
+        self._projectless_root_path = None  # type: Optional[str]
         self._diagnostics.set_on_updated(
-            lambda file_path, client_name, diagnostics:
+            lambda file_path, client_name:
                 global_events.publish("document.diagnostics",
-                                      DiagnosticsUpdate(self._window, client_name, file_path, diagnostics)))
+                                      DiagnosticsUpdate(self._window, client_name, file_path)))
         self._on_closed = on_closed
         self._is_closing = False
+        self._initialization_lock = threading.Lock()
 
     def get_session(self, config_name: str) -> 'Optional[Session]':
         return self._sessions.get(config_name)
@@ -359,15 +367,17 @@ class WindowManager(object):
 
     def _initialize_on_open(self, view: ViewLike):
         # have all sessions for this document been started?
-        startable_configs = filter(lambda c: c.enabled and c.name not in self._sessions,
-                                   self._configs.syntax_configs(view))
+        with self._initialization_lock:
+            startable_configs = filter(lambda c: c.enabled and c.name not in self._sessions,
+                                       self._configs.syntax_configs(view))
 
-        for config in startable_configs:
-            debug("window {} requests {} for {}".format(self._window.id(), config.name, view.file_name()))
-            self._start_client(config)
+            for config in startable_configs:
+                debug("window {} requests {} for {}".format(self._window.id(), config.name, view.file_name()))
+                self._start_client(config)
 
     def _start_client(self, config: ClientConfig):
-        project_path = get_project_path(self._window)
+        project_path = self._ensure_project_path()
+
         if project_path is None:
             debug('Cannot start without a project folder')
             return
@@ -383,9 +393,13 @@ class WindowManager(object):
         debug("starting in", project_path)
         session = None  # type: Optional[Session]
         try:
-            session = self._start_session(self._window, project_path, config,
-                                          lambda session: self._handle_session_started(session, project_path, config),
-                                          lambda config_name: self._handle_session_ended(config_name))
+            session = self._start_session(
+                window=self._window,
+                project_path=project_path,
+                config=config,
+                on_pre_initialize=self._handle_pre_initialize,
+                on_post_initialize=self._handle_post_initialize,
+                on_post_exit=self._handle_post_exit)
         except Exception as e:
             message = "\n\n".join([
                 "Could not start {}",
@@ -429,6 +443,17 @@ class WindowManager(object):
             debug("unloading session", config_name)
             self._sessions[config_name].end()
 
+    def _ensure_project_path(self) -> 'Optional[str]':
+        if self._project_path is None:
+            self._project_path = get_project_path(self._window)
+            if self._project_path is None and self._projectless_root_path is None:
+                # the projectless fallback will only be set once per window.
+                self._projectless_root_path = get_active_view_path(self._window)
+        return self._project_path or self._projectless_root_path
+
+    def get_project_path(self) -> 'Optional[str]':
+        return self._project_path or self._projectless_root_path
+
     def _end_old_sessions(self):
         current_project_path = get_project_path(self._window)
         if current_project_path != self._project_path:
@@ -447,23 +472,14 @@ class WindowManager(object):
         # reconstruct/get the actual Client object back. Maybe we can (ab)use our homebrew event system for this?
         client.send_response(Response(request_id, {"applied": True}))
 
-    def _handle_session_started(self, session, project_path, config):
+    def _handle_pre_initialize(self, session: 'Session') -> None:
         client = session.client
-        client.set_crash_handler(lambda: self._handle_server_crash(config))
-        client.set_error_display_handler(lambda msg: self._window.status_message(msg))
-
-        # handle server requests and notifications
-        client.on_request(
-            "workspace/applyEdit",
-            lambda params, request_id: self._apply_workspace_edit(params, client, request_id))
+        client.set_crash_handler(lambda: self._handle_server_crash(session.config))
+        client.set_error_display_handler(self._window.status_message)
 
         client.on_request(
             "window/showMessageRequest",
             lambda params, request_id: self._handle_message_request(params, client, request_id))
-
-        client.on_notification(
-            "textDocument/publishDiagnostics",
-            lambda params: self._diagnostics.handle_client_diagnostics(config.name, params))
 
         client.on_notification(
             "window/showMessage",
@@ -471,9 +487,21 @@ class WindowManager(object):
 
         client.on_notification(
             "window/logMessage",
-            lambda params: server_log(config.name, params.get("message", "???") if params else "???"))
+            lambda params: server_log(session.config.name, params.get("message", "???") if params else "???"))
 
-        self._handlers.on_initialized(config.name, self._window, client)
+    def _handle_post_initialize(self, session: 'Session') -> None:
+        client = session.client
+
+        # handle server requests and notifications
+        client.on_request(
+            "workspace/applyEdit",
+            lambda params, request_id: self._apply_workspace_edit(params, client, request_id))
+
+        client.on_notification(
+            "textDocument/publishDiagnostics",
+            lambda params: self._diagnostics.handle_client_diagnostics(session.config.name, params))
+
+        self._handlers.on_initialized(session.config.name, self._window, client)
 
         client.send_notification(Notification.initialized())
 
@@ -483,13 +511,13 @@ class WindowManager(object):
 
         global_events.subscribe('view.on_close', lambda view: self._handle_view_closed(view, session))
 
-        if config.settings:
+        if session.config.settings:
             configParams = {
-                'settings': config.settings
+                'settings': session.config.settings
             }
             client.send_notification(Notification.didChangeConfiguration(configParams))
 
-        self._window.status_message("{} initialized".format(config.name))
+        self._window.status_message("{} initialized".format(session.config.name))
 
     def _handle_view_closed(self, view, session):
         if view.file_name():
@@ -523,12 +551,13 @@ class WindowManager(object):
             if self._on_closed:
                 self._on_closed()
 
-    def _handle_session_ended(self, config_name):
+    def _handle_post_exit(self, config_name: str) -> None:
         self._documents.remove_session(config_name)
         del self._sessions[config_name]
         for view in self._window.views():
-            if view.file_name():
-                self._diagnostics.remove(view.file_name(), config_name)
+            file_name = view.file_name()
+            if file_name:
+                self._diagnostics.remove(file_name, config_name)
 
         debug("session", config_name, "ended")
         if not self._sessions:
